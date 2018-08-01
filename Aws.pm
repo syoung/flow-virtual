@@ -18,7 +18,7 @@ use Carp;
 
 #### INTERNAL MODULES use FindBin qw($Bin); use lib "$Bin/../../";
 
-class Virtual::Aws with (Util::Logger, Agua::Common::Aws) {
+class Virtual::Aws with (Util::Logger, Web::Cloud::Aws) {
 
 #### EXTERNAL MODULES
 use JSON;
