@@ -52,6 +52,17 @@ method initialise ($args) {
 method launchNode ($workobject, $instanceobject, $amiid, $maxnodes, $instancetype, $instancename) {
 	$self->logDebug("amiid", $amiid);
 
+	#### TO DO: REFACTOR TO Virtual::Aws::launchNode AND ADD -
+	#### 
+	# # 3. PRINT OPENSTACK AUTHENTICATION *-openrc.sh FILE
+	# my $virtualtype		=	$self->conf()->getKey("agua", "VIRTUALTYPE");
+	# my $authfile;
+	# if ( $virtualtype eq "openstack" ) {
+	# 	$authfile	=	$self->printAuth($username);
+	# }
+	# $self->logDebug("authfile", $authfile);
+
+
 	my $authfile = $self->printAuthFile();
  	$self->logDebug("authfile", $authfile);
    

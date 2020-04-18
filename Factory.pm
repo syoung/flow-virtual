@@ -10,11 +10,11 @@ use lib "$Bin/../";
 class Virtual {
 
 sub new {
-    my $class          = shift;
-    my $type = shift;
+    my $class      = shift;
+    my $type       = shift;
     
     $type = uc(substr($type, 0, 1)) . substr($type, 1);
-    #print "Virtual::new    type: $type\n";
+    print "***************** Virtual::new    type: $type\n";
     
     my $location    = "Virtual/$type.pm";
     $class          = "Virtual::$type";
