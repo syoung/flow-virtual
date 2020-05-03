@@ -59,6 +59,7 @@ method nodeExists ( $stageobject ) {
   $self->logDebug( "configfile", $configfile );
 
   my $ipaddress = undef;
+  my $instanceid = undef;
   my $tries = 5;
   my $delay = 2;
   my $counter = 0;
@@ -67,16 +68,19 @@ method nodeExists ( $stageobject ) {
   while ( $counter < $tries and not defined $ipaddress ) {
     my $command = "AWS_CONFIG_FILE=$configfile \\
 && AWS_CREDENTIALS_FILE=$credentialsfile \\
-&& aws ec2 describe-instances --filters $tag | grep PublicIpAddress";
+&& aws ec2 describe-instances --filters $tag";
     my $output = `$command`;
     $self->logDebug("output", $output);
+    ($instanceid) = $output =~ /"InstanceId": "([^"]+)"/;
     ($ipaddress) = $output =~ /"PublicIpAddress": "([^"]+)"/;
     $self->logDebug("ipaddress", $ipaddress);
     sleep(2);
     $counter++;
   }
 
-  return $ipaddress;
+  my $instancename = $self->getInstanceName( $stageobject );
+
+  return ( $instancename, $instanceid, $ipaddress );
 }
 
 
@@ -228,7 +232,7 @@ method launchNode ( $stageobject ) {
   my $tags = $self->getNameTag( $stageobject );
   $self->setTags($instanceid, $instancename, $region, $tags);
     
-  return ( $instanceid, $instancename, $ipaddress );
+  return ( $instancename, $instanceid, $ipaddress );
 }
 
 method ipFromInstanceId ( $instanceid, $credentialsfile,$configfile ) {
