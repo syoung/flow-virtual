@@ -1,7 +1,7 @@
 use MooseX::Declare;
 =head2
 
-	PACKAGE		Virtual::Openstack
+	PACKAGE		Virtual::Openstack::Main
 	
     VERSION:        0.01
 
@@ -20,7 +20,7 @@ use FindBin qw($Bin);
 use lib "$Bin/../../";
 use DBase::Main;
 
-class Virtual::Openstack with (Util::Logger, Virtual::Openstack::Nova) {
+class Virtual::Openstack::Main with (Util::Logger, Virtual::Openstack::Nova) {
 
 #### EXTERNAL MODULES
 use Conf::Yaml;

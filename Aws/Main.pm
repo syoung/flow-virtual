@@ -2,7 +2,7 @@ use MooseX::Declare;
 
 =head2
 
-	PACKAGE		Virtual::Aws
+	PACKAGE		Virtual::Aws::Main
 	
     VERSION:        0.01
 
@@ -18,7 +18,7 @@ use Carp;
 use File::Path qw(make_path);
 
 
-class Virtual::Aws with Util::Logger {
+class Virtual::Aws::Main with Util::Logger {
 
 #### EXTERNAL MODULES
 use JSON;
@@ -70,7 +70,7 @@ method nodeExists ( $stageobject ) {
 && AWS_CREDENTIALS_FILE=$credentialsfile \\
 && aws ec2 describe-instances --filters $tag";
     my $output = `$command`;
-    $self->logDebug("output", $output);
+    # $self->logDebug("output", $output);
     ($instanceid) = $output =~ /"InstanceId": "([^"]+)"/;
     ($ipaddress) = $output =~ /"PublicIpAddress": "([^"]+)"/;
     $self->logDebug("ipaddress", $ipaddress);
@@ -144,7 +144,7 @@ method launchNode ( $stageobject ) {
   my $imageid = $self->getProfileValue( "virtual:image:id", $profilehash );
   my $instancetype = $self->getProfileValue( "virtual:instance:type", $profilehash );
   my $instancename = $self->getInstanceName( $stageobject );
- my $disksize = $self->getProfileValue( "virtual:disk:size", $profilehash );
+  my $disksize = $self->getProfileValue( "virtual:disk:size", $profilehash );
 
   $self->logDebug( "imageid", $imageid );
   $self->logDebug( "instancetype", $instancetype );
@@ -156,6 +156,9 @@ method launchNode ( $stageobject ) {
   $self->logDebug("credentialsfile", $credentialsfile);
   my $configfile        =   $self->getProfileValue( "virtual:configfile", $profilehash );
   $self->logDebug("configfile", $configfile);
+
+  my $userdatafile    =   $self->getProfileValue( "virtual:userdata", $profilehash );
+  $self->logDebug("userdatafile", $userdatafile);
 
   #### VOLUME MAPPING FILE
   my $workflowdir     = $self->getWorkflowDir( $stageobject );
@@ -180,37 +183,12 @@ method launchNode ( $stageobject ) {
 ";
   $self->logDebug( "command", $command );
 
-  my $templatefile    = $self->getTemplateFile( $stageobject );
-  $self->logDebug("templatefile", $templatefile);
-  if ( defined $templatefile ) {
-    my $userdatafile = $self->printUserDataFile( $templatefile, $stageobject );
-    $command .= "--user-data file://$userdatafile \\";    
+  if ( defined $userdatafile and $userdatafile ne "" ) {
+    $command .= "--user-data file://$userdatafile \\";
   }
+  $command .= "\n";
+
   $self->logDebug( "command", $command );
-
-  # $self->logDebug( "DEBUG EXIT" );
-  # exit;
-  
-  # my $runinstances = $self->conf()->getKey( "core:RUNINSTANCES" );
-  # $self->logDebug("runinstances", $runinstances);
-
-  # for my $parameter ( keys %$runinstances ) {
-  #   $self->logDebug("parameter", $parameter);
-  #   my $string = "";
-  #   my $ref = ref($runinstances->{$parameter});
-  #   $self->logDebug("ref", $ref);
-  #   if ( $ref eq "ARRAY" ) {
-  #     foreach my $entry ( @{ $runinstances->{$parameter} } )  {
-  #       $string .= " $entry";
-  #     }
-  #   }
-  #   else {
-  #     $string = $runinstances->{ $parameter };
-  #   }
-
-  #   $command .= qq{--$parameter $string \\\n};
-  # }
-
 
 #### DEBUG
 #### DEBUG
@@ -221,16 +199,17 @@ method launchNode ( $stageobject ) {
   $self->logDebug("err", $err);
 
   my $instanceid  =  $self->parseLaunchOutput( $out );
-
-  # my $instanceid = "i-0a20b6514d4242b08";
-
-  $self->logDebug("instanceid", $instanceid);
+  # my $instanceid = "i-024b48eb744330732";
+  # $self->logDebug("instanceid", $instanceid);
   
+
   my $ipaddress = $self->ipFromInstanceId($instanceid, $credentialsfile, $configfile); 
   $self->logDebug("ipaddress", $ipaddress);
+  
+  $self->setInstanceName( $instanceid, $instancename );
 
-  my $tags = $self->getNameTag( $stageobject );
-  $self->setTags($instanceid, $instancename, $region, $tags);
+# $self->logDebug( "DEBUG EXIT" );
+# exit;
     
   return ( $instancename, $instanceid, $ipaddress );
 }
@@ -285,24 +264,21 @@ method getAws {
     return $aws;
 }
 
-method setTags ($instanceid, $instancename, $region, $tags) {
-    $self->logDebug("instanceid", $instanceid);
-    $self->logDebug("tags", $tags);
-    
-    my $aws = $self->getAws();
-    my $command = qq{$aws ec2 create-tags \\
---resources $instanceid \\
---region $region \\
---tags /usr/bin/aws ec2 create-tags \
---resources i-0a20b6514d4242b08 \
---region us-east-1 \
---tags Key=tag-value,Values=$instancename};
+method setInstanceName ( $instanceid, $instancename ) {
+  $self->logDebug("instanceid", $instanceid);
+  $self->logDebug( "instancename", $instancename );
+  
+  my $aws = $self->getAws();
+  my $command = qq{$aws ec2 create-tags \\
+ --resources $instanceid \\
+--tags Key=Name,Value=$instancename};
+  $self->logDebug( "command", $command );
 
-	my ($out, $err) 	=	$self->runCommand($command);
-	$self->logDebug("out", $out);
-	$self->logDebug("err", $err);
+  my ($out, $err)   = $self->runCommand($command);
+  $self->logDebug("out", $out);
+  $self->logDebug("err", $err);
 
-    return ($out, $err);
+  return ($out, $err);
 }
 
 method printUserDataFile ( $templatefile, $workflowobject ) {
