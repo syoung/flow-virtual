@@ -18,39 +18,78 @@ use Carp;
 use File::Path qw(make_path);
 
 
-class Virtual::Aws::Main with Util::Logger {
+class Virtual::Aws::Main with (Virtual::Aws::Common, Util::Logger) {
 
 #### EXTERNAL MODULES
 use JSON;
 
 #### INTERNAL MODULES
-use Conf::Yaml;
-use Util::Ssh;
-
+use Virtual::Aws::Volume;
 
 # Ints
-has 'sleep'		=>  ( isa => 'Int', is => 'rw', default => 4 );  
-has 'log'		=>  ( isa => 'Int', is => 'rw', default => 2 );  
+has 'tries'     => ( isa => 'Int', is => 'rw', default => 20 );
+has 'sleep'     => ( isa => 'Int', is => 'rw', default => 5 );
+has 'log'		    =>  ( isa => 'Int', is => 'rw', default => 2 );  
 has 'printlog'	=>  ( isa => 'Int', is => 'rw', default => 2 );
 
 # Strings
 
 # Objects
-has 'conf'			=> ( isa => 'Conf::Yaml', is => 'rw', required	=>	0 );
-has 'jsonparser'	=> ( isa => 'JSON', is => 'rw', lazy	=>	1, builder	=>	"setJsonParser"	);
-has 'ssh'			=> ( isa => 'Util::Ssh', is => 'rw', lazy	=>	1, builder	=>	"setSsh"	);
+has 'conf'			=> ( 
+  isa => 'Conf::Yaml', 
+  is => 'rw', 
+  required	=>	0
+);
 
-####////}}}
+has 'ssh'			=> ( 
+  isa => 'Util::Remote::Ssh', 
+  is => 'rw', 
+  lazy	=>	1, 
+  builder	=>	"setSsh"	
+);
+
+has 'volume'  => (
+  isa => 'Virtual::Aws::Volume',
+  is  => 'rw',
+  lazy  =>  1, 
+  builder  =>  "setVolume"
+);
+
 
 method BUILD ($args) {
 	$self->initialise($args);
 }
 
 method initialise ($args) {
-	$self->logNote("");
+	# $self->logNote("");
 }
 
-method nodeExists ( $stageobject ) {
+method setSsh( $profilehash ) {
+  my $ssh  = Util::Remote::Ssh->new({
+    conf          =>  $self->conf(),
+    log           =>  $self->log(),
+    printlog      =>  $self->printlog()
+  });
+
+  $ssh->setUp( $profilehash );
+
+  $self->ssh( $ssh );  
+}
+
+method setVolume () {
+  my $volume = Virtual::Aws::Volume->new(
+    ssh       =>  $self->ssh(),
+    logfile   =>  $self->logfile(),
+    log       =>  $self->log(),
+    printlog  =>  $self->printlog()
+  );
+
+  $self->logDebug("volume: $volume");
+
+  return $self->volume( $volume );
+}
+
+method getNodeInfo ( $stageobject ) {
   # $self->logDebug( "stageobject", $stageobject );
   my $profilehash = $stageobject->{ profilehash };
   my $credentialsfile = $self->getProfileValue( "virtual:credentialsfile", $profilehash );
@@ -80,9 +119,15 @@ method nodeExists ( $stageobject ) {
 
   my $instancename = $self->getInstanceName( $stageobject );
 
-  return ( $instancename, $instanceid, $ipaddress );
-}
+  #### ADD VARIABLES TO profilehash
+  $stageobject->profilehash()->{ instance } = {};
+  $stageobject->profilehash()->{ instance }->{ id } = $instanceid;
+  $stageobject->profilehash()->{ instance }->{ name } = $instancename;
+  $stageobject->profilehash()->{ instance }->{ ipaddress } = $ipaddress;  
+  $self->logDebug( "profilehash", $profilehash, 1 );
 
+  return $stageobject;
+}
 
 #### LATER: REMOVE 
 # method getInstance ( $stageobject ) {
@@ -144,12 +189,14 @@ method launchNode ( $stageobject ) {
   my $imageid = $self->getProfileValue( "virtual:image:id", $profilehash );
   my $instancetype = $self->getProfileValue( "virtual:instance:type", $profilehash );
   my $instancename = $self->getInstanceName( $stageobject );
-  my $disksize = $self->getProfileValue( "virtual:disk:size", $profilehash );
+  my $volumesize = $self->getProfileValue( "virtual:volume:size", $profilehash );
+  my $volumesnapshot = $self->getProfileValue( "virtual:volume:snapshot", $profilehash );
+  $self->logDebug( "volumesnapshot", $volumesnapshot );
+  $self->logDebug( "volumesize", $volumesize );
 
   $self->logDebug( "imageid", $imageid );
   $self->logDebug( "instancetype", $instancetype );
   $self->logDebug( "instancename", $instancename );
-  $self->logDebug( "disksize", $disksize );
 
   #### CREDENTIALS AND CONFIG FILE
   my $credentialsfile        =   $self->getProfileValue( "virtual:credentialsfile", $profilehash );
@@ -160,18 +207,15 @@ method launchNode ( $stageobject ) {
   my $userdatafile    =   $self->getProfileValue( "virtual:userdata", $profilehash );
   $self->logDebug("userdatafile", $userdatafile);
 
-  #### VOLUME MAPPING FILE
-  my $workflowdir     = $self->getWorkflowDir( $stageobject );
-  my $mappingfile     = "$workflowdir/$stagenumber-$stagename-block-mappings.json";
-  $self->logDebug("mappingfile", $mappingfile);
-  $self->printMappingFile( $mappingfile, $disksize );
+  # #### VOLUME MAPPING FILE
+  # my $workflowdir     = $self->getWorkflowDir( $stageobject );
+  # my $mappingfile     = "$workflowdir/$stagenumber-$stagename-block-mappings.json";
+  # $self->logDebug("mappingfile", $mappingfile);
+
+  # # $self->printMappingFile( $mappingfile, $volumesnapshot, $volumesize );
  
   my $keypair  = $self->getProfileValue( "virtual:keypair", $profilehash );
   my $region  = $self->getProfileValue( "virtual:region", $profilehash );
-
-  #### TO DO: FIX MAPPING - CAUSES FAILURE OF SSH TO INSTANCE 
-  #### --block-device-mappings=file://$mappingfile \\
-    
   my $aws = $self->getAws();
 
   my $command  =  "AWS_CONFIG_FILE=$configfile \\
@@ -198,20 +242,149 @@ method launchNode ( $stageobject ) {
   $self->logDebug("out", $out);
   $self->logDebug("err", $err);
 
-  my $instanceid  =  $self->parseLaunchOutput( $out );
-  # my $instanceid = "i-024b48eb744330732";
-  # $self->logDebug("instanceid", $instanceid);
+  my $parser = JSON->new();
+  my $instance = $parser->decode( $out );
+  my $instanceid = $instance->{ Instances }[ 0 ]->{ InstanceId };
+  my $availabilityzone = $instance->{ Instances }[ 0 ]->{ Placement }->{ AvailabilityZone };
+  $self->logDebug( "availabilityzone", $availabilityzone );
+  $self->logDebug("instanceid", $instanceid);
   
-
   my $ipaddress = $self->ipFromInstanceId($instanceid, $credentialsfile, $configfile); 
+
+  # my $instanceid = "i-0434443d7e084c715";
+  # my $ipaddress  = "52.91.211.175";
+  # my $availabilityzone = "us-east-1c";
+
+  # my $instanceid = "i-0b3c85d1b59a0cfa3";
+  # my $ipaddress = "54.86.221.44";
+  # my $availabilityzone = "us-east-1a";
+
+  # my $instanceid = "i-04866f42d53b2eada";
+  # my $ipaddress = "54.90.190.212";
+  # my $availabilityzone = "us-east-1d";
+
+  # my $instanceid = "i-0f38d69878f26083a";
+  # my $ipaddress = "52.55.27.42";
+  # my $availabilityzone = "us-east-1a";
+
+
   $self->logDebug("ipaddress", $ipaddress);
   
   $self->setInstanceName( $instanceid, $instancename );
 
-# $self->logDebug( "DEBUG EXIT" );
-# exit;
+  #### ADD VARIABLES TO profilehash
+  $stageobject->profilehash()->{ instance } = {};
+  $stageobject->profilehash()->{ instance }->{ id } = $instanceid;
+  $stageobject->profilehash()->{ instance }->{ name } = $instancename;
+  $stageobject->profilehash()->{ instance }->{ ipaddress } = $ipaddress;  
+  $stageobject->profilehash()->{ instance }->{ availabilityzone } = $availabilityzone;  
+  $self->logDebug( "profilehash", $profilehash, 1 );
+
+  $self->waitInstanceStatus( $instanceid, [ "running" ] );
+
+  $self->setSsh( $profilehash );
+
+  $self->mountVolumes( $profilehash, $instanceid, $ipaddress, $availabilityzone );
     
-  return ( $instancename, $instanceid, $ipaddress );
+  return $stageobject;
+}
+
+method waitInstanceStatus ( $instanceid, $statuses ) {
+  $self->logDebug( "instanceid", $instanceid );
+  $self->logDebug( "statuses", $statuses );
+
+  my $tries = $self->tries();
+  my $sleep = $self->sleep();
+  my $counter = 0;
+  while ( $counter < $tries ) {
+
+    sleep( $sleep );    
+    my $aws = $self->getAws();
+    my $command = "$aws ec2 describe-instances --instance-ids $instanceid";
+    $self->logDebug( "command", $command );
+    my ( $stdout, $stderr ) = $self->runCommand( $command );
+    $self->logDebug( "stdout", $stdout );
+    $self->logDebug( "stderr", $stderr );
+
+    my $parser = JSON->new();
+    my $instance = $parser->decode( $stdout );
+    $self->logDebug( "instance", $instance );
+
+    # FORMAT:
+    #
+    # "Reservations": [
+    #   {
+    #     "Instances": [
+    #       {
+    #         "State": {
+    #             "Name": "running"
+   
+    my $currentstatus = $instance->{ Reservations }[ 0 ]->{ Instances }[ 0 ]->{ State }->{ Name };
+    $self->logDebug( "currentstatus", $currentstatus );
+
+    foreach my $status ( @$statuses ) {
+      if ( $currentstatus eq $status ) {
+        return 1;
+      }
+    }
+
+    $counter++;
+  }
+
+  return 1;
+
+}
+
+method mountVolumes ( $profilehash, $instanceid, $ipaddress, $availabilityzone ) {
+  $self->logDebug( "profilehash", $profilehash );
+  $self->logDebug( "instanceid", $instanceid );
+  $self->logDebug( "ipaddress", $ipaddress );
+  $self->logDebug( "availabilityzone", $availabilityzone );
+
+  my $volumes = $self->getProfileValue( "virtual:volumes", $profilehash );   
+  $self->logDebug( "volumes", $volumes );
+
+  if ( not defined $volumes ) {
+    $self->logDebug( "Volumes not defined. Skipping 'mountVolumes'" );
+  }
+
+  my $volumer = $self->volume();
+  # $self->logDebug( "volumer", $volumer );
+
+  foreach my $volume ( @$volumes ) {
+    my $snapshot = $volume->{ snapshot };
+    $self->logDebug( "snapshot", $snapshot );
+    my $size = $volume->{ size };
+    $self->logDebug( "size", $size );
+    my $filetype = $volume->{ filetype };
+    $self->logDebug( "filetype", $filetype );
+
+    my $volumeid = $volumer->createVolume( $snapshot, $availabilityzone, $size );
+    # my $volumeid = "vol-0c5120da52c898d29";
+    # my $volumeid = "vol-0ab3a2f5c382ca255";
+    $self->logDebug( "volumeid", $volumeid );
+
+    $volumer->waitVolumeStatus( $volumeid, [ "available" ] );
+
+    ####  TO DO: FORMAT VOLUME IF REQUIRED
+    # my $format = $volume->{ format };
+    # if ( defined $format ) {
+    # }
+
+    my $device = $volume->{ device };
+    my $mountpoint = $volume->{ mountpoint } || "/mnt";
+    $self->logDebug( "device", $device );
+    $self->logDebug( "mountpoint", $mountpoint );
+    $volumer->createMountPoint( $mountpoint );
+
+    my $success = $volumer->attachVolume( $instanceid, $volumeid, $device, $mountpoint );
+    $self->logDebug( "success", $success );
+    $self->logCritical( "FAILED TO ATTACH VOLUME" ) if $success == 0;
+
+    $volumer->waitVolumeStatus( $volumeid, [ "attached", "in-use" ] );
+
+    $volumer->mountVolume( $device, $mountpoint, $filetype );
+  }
 }
 
 method ipFromInstanceId ( $instanceid, $credentialsfile,$configfile ) {
@@ -250,19 +423,12 @@ method getProfileValue ( $keystring, $profile ) {
   foreach my $key ( @keys ) {
     $hash  = $hash->{$key};
     return undef if not defined $hash;
-    $self->logDebug("hash", $hash);
+    # $self->logDebug("hash", $hash);
   }
 
   return $hash;
 }
 
-method getAws {
-    my $aws = "/usr/local/bin/aws";
-    $aws = "/usr/bin/aws" if not -f $aws;
-    $self->logDebug("aws", $aws);
-
-    return $aws;
-}
 
 method setInstanceName ( $instanceid, $instancename ) {
   $self->logDebug("instanceid", $instanceid);
@@ -409,9 +575,9 @@ aws_secret_access_key=$secretaccesskey
 	return $authfile;
 }
 
-method printMappingFile ( $mappingfile, $disksize ) {
+method printMappingFile ( $mappingfile, $volumesnapshot, $volumesize ) {
   $self->logDebug( "mappingfile", $mappingfile );
-  $self->logDebug( "disksize", $disksize );
+  $self->logDebug( "volumesize", $volumesize );
   
   my ($parentdir) = $mappingfile =~ /^(.+?)\/[^\/]+$/;
   $self->logDebug( "parentdir", $parentdir );
@@ -419,10 +585,11 @@ method printMappingFile ( $mappingfile, $disksize ) {
 
   my $contents = qq{[
   {
-    "DeviceName": "/dev/sda1",
+    "DeviceName": "/dev/sdf",
     "Ebs": {
-      "DeleteOnTermination": true,
-      "VolumeSize": $disksize
+      "DeleteOnTermination": false,
+      "VolumeSize": $volumesize,
+      "SnapshotId" : $volumesnapshot
     }
   }
 ]};
@@ -580,56 +747,6 @@ method getFileContents ($file) {
 	$/ = $temp;
 
 	return $contents;
-}
-
-method runCommand ($command) {
-	$self->logDebug("command", $command);
-	my $stdoutfile = "/tmp/$$.out";
-	my $stderrfile = "/tmp/$$.err";
-	my $output = '';
-	my $error = '';
-	
-	#### TAKE REDIRECTS IN THE COMMAND INTO CONSIDERATION
-	if ( $command =~ />\s+/ ) {
-		#### DO NOTHING, ERROR AND OUTPUT ALREADY REDIRECTED
-		if ( $command =~ /\s+&>\s+/
-			or ( $command =~ /\s+1>\s+/ and $command =~ /\s+2>\s+/)
-			or ( $command =~ /\s+1>\s+/ and $command =~ /\s+2>&1\s+/) ) {
-			return `$command`;
-		}
-		#### STDOUT ALREADY REDIRECTED - REDIRECT STDERR ONLY
-		elsif ( $command =~ /\s+1>\s+/ or $command =~ /\s+>\s+/ ) {
-			$command .= " 2> $stderrfile";
-			$output		= `$command`;
-			$error 		= `cat $stderrfile`;
-		}
-		#### STDERR ALREADY REDIRECTED - REDIRECT STDOUT ONLY
-		elsif ( $command =~ /\s+2>\s+/ or $command =~ /\s+2>&1\s+/ ) {
-			$command .= " 1> $stdoutfile";
-			print `$command`;
-			$output = `cat $stdoutfile`;
-		}
-	}
-	else {
-		$command .= " 1> $stdoutfile 2> $stderrfile";
-		print `$command`;
-		$output = `cat $stdoutfile`;
-		$error = `cat $stderrfile`;
-	}
-	
-	$self->logNote("output", $output) if $output;
-	$self->logNote("error", $error) if $error;
-	
-	##### CHECK FOR PROCESS ERRORS
-	$self->logError("Error with command: $command ... $@") and exit if defined $@ and $@ ne "" and $self->can('warn') and not $self->warn();
-
-	#### CLEAN UP
-	`rm -fr $stdoutfile`;
-	`rm -fr $stderrfile`;
-	chomp($output);
-	chomp($error);
-	
-	return $output, $error;
 }
 
 

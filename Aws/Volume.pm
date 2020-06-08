@@ -1,11 +1,32 @@
-package Ops::Ec2;
-use Moose::Role;
-use Method::Signatures::Simple;
+use MooseX::Declare;
 
+class Virtual::Aws::Volume with (Util::Logger, Virtual::Aws::Common) {
+
+# Ints
+has 'tries'		=> ( isa => 'Int', is => 'rw', default => 10 );
+has 'sleep'		=> ( isa => 'Int', is => 'rw', default => 3 );
+
+# Strings
 has 'filetype'		=> ( isa => 'Str|Undef', is => 'rw', default => 'ext3' );
-has 'head' 			=> ( is =>	'rw', 'isa' => 'Engine::Instance', required	=>	0 );
 
-#### VOLUME METHODS
+# Objects
+has 'head' 			=> ( 
+	is =>	'rw', 
+	isa => 'Engine::Instance', 
+	required	=>	0 
+);
+
+has 'ssh'			=> ( 
+  isa => 'Util::Remote::Ssh', 
+  is => 'rw', 
+  lazy	=>	1, 
+  builder	=>	"setSsh"	
+);
+
+method BUILD ($args) {
+	# $self->logDebug( "args", $args );
+}
+
 method loadSnapshot ($id, $name, $description) {
 	$self->logDebug("id", $id);
 
@@ -35,17 +56,26 @@ method loadVolume ($snapshot, $tag) {
 	$self->_createVolume($privatekey, $publiccert, $snapshot, $availzone, $size);
 }
 
-method _createVolume ($privatekey, $publiccert, $snapshot, $availzone, $size) {
-#### CREATE AN EBS VOLUME
-    my $command = "ec2-create-volume ";
+method createVolume ( $snapshot, $availzone, $size ) {
+	$self->logDebug( "snapshot", $snapshot );
+	$self->logDebug( "availzone", $availzone );
+	$self->logDebug( "size", $size );
+
+	my $aws = $self->getAws();
+  my $command = "$aws ec2 create-volume ";
 	if ( defined $snapshot and $snapshot ) {
-	$command .= "--snapshot $snapshot -s $size -z $availzone -K $privatekey -C $publiccert | grep VOLUME | cut -f2";
+		$command .= "--snapshot-id $snapshot --size $size --availability-zone $availzone";
 	}
 	else {
-		$command .= "-s $size -z $availzone -K $privatekey -C $publiccert | grep VOLUME | cut -f2";
+		$command .= "--size $size --availability-zone $availzone ";
 	}
-	$self->logDebug("command", $command);
-	my ($volumeid) = $self->runCommand($command);
+	$self->logDebug( "command", $command );
+	my ( $stdout, $stderr ) = $self->runCommand( $command );
+	$self->logDebug( "stdout", $stdout );
+	$self->logDebug( "stderr", $stderr );
+
+	$self->logDebug( "stdout", $stdout );
+	my ( $volumeid ) = $stdout =~ /"VolumeId": "([^"]+)"/ms;	
 	$self->logDebug("volumeid", $volumeid);
 
 	return $volumeid;
@@ -64,22 +94,109 @@ method formatVolume ($device, $filetype) {
 }
 
 method createMountPoint ($mountpoint) {
-	File::Path::mkpath($mountpoint) if not -d $mountpoint;
-	$self->logError("Can't create mountpoint") and exit if not -d $mountpoint;
+	my $command = "sudo mkdir -p $mountpoint";
+	my ( $stdout, $stderr ) = $self->ssh()->command( $command );
+	$self->logDebug( "stdout", $stdout );
+	$self->logDebug( "stderr", $stderr );
+
+	# $self->logError("Can't create mountpoint") and exit if not -d $mountpoint;
+}
+
+method attachVolume ($instanceid, $volumeid, $device, $mountpoint) {
+#### ATTACH A VOLUME TO A DEVICE
+	$self->logDebug("instanceid", $instanceid);
+	$self->logDebug("volumeid", $volumeid);
+	$self->logDebug("device", $device);
+	$self->logDebug("mountpoint", $mountpoint);
+
+	my $aws = $self->getAws();
+	my $command = "$aws ec2 attach-volume --volume-id $volumeid --instance-id $instanceid --device $device ";
+	$self->logDebug("command", $command);
+	my ( $stdout, $stderr ) = $self->runCommand($command); 
+	$self->logDebug( "stdout", $stdout );
+
+	#### RETURN 0 ON FAILURE
+	if ( $stdout eq "" ) {
+		return 0;
+	}
+
+	#### EXPECTED OUTPUT
+	#
+	# {
+	#    "AttachTime": "2020-05-18T19:32:59.760Z",
+	#    "Device": "/dev/xvdf",
+	#    "InstanceId": "i-0434443d7e084c715",
+	#    "State": "attaching",
+	#    "VolumeId": "vol-0c5120da52c898d29"
+	# }
+
+  my $parser = JSON->new();
+  my $result = $parser->decode( $stdout );
+  $self->logDebug( "result", $result );
+	if ( $result->{ State } ne "attaching" ) {
+		return 0;
+	}
+
+	return 1;
+}
+
+method waitVolumeStatus ( $volumeid, $statuses ) {
+	$self->logDebug( "volumeid", $volumeid );
+	$self->logDebug( "statuses", $statuses );
+
+	my $tries = $self->tries();
+	my $sleep = $self->sleep();
+	my $counter = 0;
+	while ( $counter < $tries ) {
+		# #### ec2dvol FORMAT:
+		#	
+		# {
+		#     "AttachTime": "2020-05-18T15:46:09.870Z",
+		#     "Device": "/dev/xvdf",
+		#     "InstanceId": "i-0434443d7e084c715",
+		#     "State": "attaching",
+		#     "VolumeId": "vol-0219290c2f7f48f78"
+		# }
+
+		sleep( $sleep );		
+		my $aws = $self->getAws();
+		my $command = "$aws ec2 describe-volumes --volume-ids $volumeid";
+		$self->logDebug( "command", $command );
+		my ( $stdout, $stderr ) = $self->runCommand( $command );
+		$self->logDebug( "stdout", $stdout );
+		$self->logDebug( "stderr", $stderr );
+	  my $parser = JSON->new();
+	  my $volume = $parser->decode( $stdout );
+	  $self->logDebug( "volume", $volume );
+
+	  my $currentstatus = $volume->{ Volumes }[ 0 ]->{ State };
+	  $self->logDebug( "currentstatus", $currentstatus );
+
+	  foreach my $status ( @$statuses ) {
+	  	if ( $currentstatus eq $status ) {
+	  		return 1;
+	  	}
+	  }
+
+		$counter++;
+	}
+
+	return 1;
 }
 
 method mountVolume ($device, $mountpoint, $filetype) {
 	$self->logDebug("device", $device);
 	$self->logDebug("mountpoint", $mountpoint);
 
-	##### CHECK MOUNTPOINT
-	$self->logCritical("Can't find mountpoint directory: $mountpoint") and  exit if not -d $mountpoint;
-
 	#### MOUNT
-	my $command = "mount -t $filetype $device $mountpoint";
+	my $command = "sudo mount -t $filetype $device $mountpoint";
 	$self->logDebug("command", $command);
 	
-	my ($result) = $self->runCommand($command);
+	my ( $stdout, $stderr ) = $self->ssh()->command( $command );
+	$self->logDebug( "stdout", $stdout );
+	$self->logDebug( "stderr", $stderr );
+
+	my $result = $stdout;
 	$self->logDebug("result", $result);
 	
 	return $result;
@@ -111,38 +228,6 @@ method unmountVolume ($device, $options) {
 	my ($result) = $self->runCommand($command);
 	$self->logDebug("result", $result);
 	
-	return $result;
-}
-
-method attachVolume ($instanceid, $volumeid, $device, $mountpoint) {
-#### ATTACH A VOLUME TO A DEVICE
-	$self->logDebug("instanceid", $instanceid);
-	$self->logDebug("volumeid", $volumeid);
-	$self->logDebug("device", $device);
-	$self->logDebug("mountpoint", $mountpoint);
-
-	my $command = "ec2-attach-volume $volumeid -i $instanceid -d $device ";
-	$self->logDebug("command", $command);
-	my ($result) = $self->runCommand($command); 
-	$result =~ s/\s+$//;
-
-	my $tries = 10;
-	my $sleep = 3;
-	my $counter = 0;
-	while ( $counter < $tries and $result ne "attached" ) {
-		#### ec2dvol FORMAT:
-		#### VOLUME  vol-85f401ed    40      snap-55fe4a3f   us-east-1a      in-use  2010-11-18T19:40:43+0000
-		#### ATTACHMENT      vol-85f401ed    i-b6147adb      /dev/sdh        attached        2010-11-18T19:40:49+0000
-
-		sleep($sleep);		
-		my $command = "ec2-describe-volumes $volumeid | grep ATTACHMENT | cut -f 5";
-		($result) = $self->runCommand($command);
-		$result =~ s/\s+$//;
-		$self->logDebug("result", $result);
-		last if $result eq "attached";
-		$counter++;
-	}
-
 	return $result;
 }
 
@@ -267,3 +352,6 @@ method localOrEC2Ip {
 
 
 1;
+
+
+}
