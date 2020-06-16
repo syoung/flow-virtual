@@ -1,5 +1,13 @@
 use MooseX::Declare;
 
+=head
+
+	CLASS: Volume
+
+	PURPOSE: Create, format and attach/detach volumes on EC2 instances
+
+=cut
+
 class Virtual::Aws::Volume with (Util::Logger, Virtual::Aws::Common) {
 
 # Ints

@@ -3,12 +3,10 @@ use MooseX::Declare;
 =head2
 
 	PACKAGE		Virtual::Aws::Main
-	
-    VERSION:        0.01
+	 
+  PURPOSE
 
-    PURPOSE
-  
-        1. UTILITY FUNCTIONS TO ACCESS A MYSQL DATABASE
+  Launch, monitor and terminate AWS VMs
 
 =cut 
 
@@ -18,7 +16,7 @@ use Carp;
 use File::Path qw(make_path);
 
 
-class Virtual::Aws::Main with (Virtual::Aws::Common, Util::Logger) {
+class Virtual::Aws::Main with (Util::Logger, Virtual::Aws::Common) {
 
 #### EXTERNAL MODULES
 use JSON;
@@ -204,8 +202,8 @@ method launchNode ( $stageobject ) {
   my $configfile        =   $self->getProfileValue( "virtual:configfile", $profilehash );
   $self->logDebug("configfile", $configfile);
 
-  my $userdatafile    =   $self->getProfileValue( "virtual:userdata", $profilehash );
-  $self->logDebug("userdatafile", $userdatafile);
+  my $templatefile    =   $self->getProfileValue( "virtual:userdata", $profilehash );
+  $self->logDebug("templatefile", $templatefile);
 
   # #### VOLUME MAPPING FILE
   # my $workflowdir     = $self->getWorkflowDir( $stageobject );
@@ -214,6 +212,9 @@ method launchNode ( $stageobject ) {
 
   # # $self->printMappingFile( $mappingfile, $volumesnapshot, $volumesize );
  
+  my $userdatafile = $self->printUserDataFile( $templatefile, $stageobject );
+  $self->logDebug( "userdatafile", $userdatafile );
+
   my $keypair  = $self->getProfileValue( "virtual:keypair", $profilehash );
   my $region  = $self->getProfileValue( "virtual:region", $profilehash );
   my $aws = $self->getAws();
@@ -231,8 +232,10 @@ method launchNode ( $stageobject ) {
     $command .= "--user-data file://$userdatafile \\";
   }
   $command .= "\n";
-
   $self->logDebug( "command", $command );
+
+exit;
+
 
 #### DEBUG
 #### DEBUG
@@ -457,7 +460,7 @@ method printUserDataFile ( $templatefile, $workflowobject ) {
 	#### GET TEMPLATE
 	my $template		=	$self->getFileContents( $templatefile );
   $template = $self->insertConfigValues( $template );
-	$template = $self->insertWorkflowValues( $template );
+	$template = $self->insertWorkflowValues( $template, $workflowobject );
   $self->logDebug("templatefile", $templatefile);
   $self->logDebug("template", $template);
 
@@ -492,7 +495,11 @@ method getUserDataFile ( $workflowobject ) {
 	my $project			    =	$workflowobject->{ projectname };
 	my $workflow		    =	$workflowobject->{ workflowname };
   my $userdir         = $self->conf()->getKey( "core:USERDIR" );
-  my $userdatafile    = "$userdir/$username/$coredir/$project/$workflow/userdata";
+  my $userdatafile    = "/$username/$coredir/$project/$workflow/userdata";
+
+  if ( $username ne "root" ) {
+     $userdatafile    = "$userdir" . $userdatafile;
+  }
 
   return $userdatafile;
 }
@@ -542,7 +549,7 @@ method insertConfigValues ($template) {
   while ( $template =~ m/%([\S]+?)%/g ) {
     my $match = $1;
     my ($key, $subkey) = $match =~ /^(.+?):(.+)$/;
-		my $value = $self->conf()->getKey($key, $subkey);
+		my $value = $self->conf()->getKey( "$key:$subkey" );
     
     $template =~ s/%$match%/$value/;
 	}
