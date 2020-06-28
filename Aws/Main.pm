@@ -97,7 +97,7 @@ method getNodeInfo ( $stageobject ) {
 
   my $ipaddress = undef;
   my $instanceid = undef;
-  my $tries = 5;
+  my $tries = 1;
   my $delay = 2;
   my $counter = 0;
 
@@ -175,7 +175,7 @@ method getInstanceName ( $stageobject ) {
 }
 
 method launchNode ( $stageobject ) {
-  # $self->logDebug( "stageobject", $stageobject );
+  $self->logDebug( "stageobject", $stageobject );
   my $username         =    $stageobject->username();
   my $projectname      =    $stageobject->projectname();
   my $workflowname     =    $stageobject->workflowname();
@@ -234,9 +234,6 @@ method launchNode ( $stageobject ) {
   $command .= "\n";
   $self->logDebug( "command", $command );
 
-exit;
-
-
 #### DEBUG
 #### DEBUG
 #### DEBUG
@@ -253,43 +250,26 @@ exit;
   $self->logDebug("instanceid", $instanceid);
   
   my $ipaddress = $self->ipFromInstanceId($instanceid, $credentialsfile, $configfile); 
-
-  # my $instanceid = "i-0434443d7e084c715";
-  # my $ipaddress  = "52.91.211.175";
-  # my $availabilityzone = "us-east-1c";
-
-  # my $instanceid = "i-0b3c85d1b59a0cfa3";
-  # my $ipaddress = "54.86.221.44";
-  # my $availabilityzone = "us-east-1a";
-
-  # my $instanceid = "i-04866f42d53b2eada";
-  # my $ipaddress = "54.90.190.212";
-  # my $availabilityzone = "us-east-1d";
-
-  # my $instanceid = "i-0f38d69878f26083a";
-  # my $ipaddress = "52.55.27.42";
-  # my $availabilityzone = "us-east-1a";
-
-
   $self->logDebug("ipaddress", $ipaddress);
   
+  #### SET INSTANCE name TAG
   $self->setInstanceName( $instanceid, $instancename );
 
-  #### ADD VARIABLES TO profilehash
-  $stageobject->profilehash()->{ instance } = {};
-  $stageobject->profilehash()->{ instance }->{ id } = $instanceid;
-  $stageobject->profilehash()->{ instance }->{ name } = $instancename;
-  $stageobject->profilehash()->{ instance }->{ ipaddress } = $ipaddress;  
-  $stageobject->profilehash()->{ instance }->{ availabilityzone } = $availabilityzone;  
-  $self->logDebug( "profilehash", $profilehash, 1 );
+#   #### ADD VARIABLES TO profilehash
+#   $stageobject->profilehash()->{ instance } = {};
+#   $stageobject->profilehash()->{ instance }->{ id } = $instanceid;
+#   $stageobject->profilehash()->{ instance }->{ name } = $instancename;
+#   $stageobject->profilehash()->{ instance }->{ ipaddress } = $ipaddress;  
+#   $stageobject->profilehash()->{ instance }->{ availabilityzone } = $availabilityzone;  
+#   $self->logDebug( "profilehash", $profilehash, 1 );
 
-  $self->waitInstanceStatus( $instanceid, [ "running" ] );
+#   $self->waitInstanceStatus( $instanceid, [ "running" ] );
 
-  $self->setSsh( $profilehash );
+#   $self->setSsh( $profilehash );
 
-  $self->mountVolumes( $profilehash, $instanceid, $ipaddress, $availabilityzone );
+#   $self->mountVolumes( $profilehash, $instanceid, $ipaddress, $availabilityzone );
     
-  return $stageobject;
+   return $stageobject;
 }
 
 method waitInstanceStatus ( $instanceid, $statuses ) {
@@ -338,86 +318,86 @@ method waitInstanceStatus ( $instanceid, $statuses ) {
 
 }
 
-method mountVolumes ( $profilehash, $instanceid, $ipaddress, $availabilityzone ) {
-  $self->logDebug( "profilehash", $profilehash );
-  $self->logDebug( "instanceid", $instanceid );
-  $self->logDebug( "ipaddress", $ipaddress );
-  $self->logDebug( "availabilityzone", $availabilityzone );
+# method mountVolumes ( $profilehash, $instanceid, $ipaddress, $availabilityzone ) {
+#   $self->logDebug( "profilehash", $profilehash );
+#   $self->logDebug( "instanceid", $instanceid );
+#   $self->logDebug( "ipaddress", $ipaddress );
+#   $self->logDebug( "availabilityzone", $availabilityzone );
 
-  my $volumes = $self->getProfileValue( "virtual:volumes", $profilehash );   
-  $self->logDebug( "volumes", $volumes );
+#   my $volumes = $self->getProfileValue( "virtual:volumes", $profilehash );   
+#   $self->logDebug( "volumes", $volumes );
 
-  if ( not defined $volumes ) {
-    $self->logDebug( "Volumes not defined. Skipping 'mountVolumes'" );
-  }
+#   if ( not defined $volumes ) {
+#     $self->logDebug( "Volumes not defined. Skipping 'mountVolumes'" );
+#   }
 
-  my $volumer = $self->volume();
-  # $self->logDebug( "volumer", $volumer );
+#   my $volumer = $self->volume();
+#   # $self->logDebug( "volumer", $volumer );
 
-  foreach my $volume ( @$volumes ) {
-    my $snapshot = $volume->{ snapshot };
-    $self->logDebug( "snapshot", $snapshot );
-    my $size = $volume->{ size };
-    $self->logDebug( "size", $size );
-    my $filetype = $volume->{ filetype };
-    $self->logDebug( "filetype", $filetype );
+#   foreach my $volume ( @$volumes ) {
+#     my $snapshot = $volume->{ snapshot };
+#     $self->logDebug( "snapshot", $snapshot );
+#     my $size = $volume->{ size };
+#     $self->logDebug( "size", $size );
+#     my $filetype = $volume->{ filetype };
+#     $self->logDebug( "filetype", $filetype );
 
-    my $volumeid = $volumer->createVolume( $snapshot, $availabilityzone, $size );
-    # my $volumeid = "vol-0c5120da52c898d29";
-    # my $volumeid = "vol-0ab3a2f5c382ca255";
-    $self->logDebug( "volumeid", $volumeid );
+#     my $volumeid = $volumer->createVolume( $snapshot, $availabilityzone, $size );
+#     # my $volumeid = "vol-0c5120da52c898d29";
+#     # my $volumeid = "vol-0ab3a2f5c382ca255";
+#     $self->logDebug( "volumeid", $volumeid );
 
-    $volumer->waitVolumeStatus( $volumeid, [ "available" ] );
+#     $volumer->waitVolumeStatus( $volumeid, [ "available" ] );
 
-    ####  TO DO: FORMAT VOLUME IF REQUIRED
-    # my $format = $volume->{ format };
-    # if ( defined $format ) {
-    # }
+#     ####  TO DO: FORMAT VOLUME IF REQUIRED
+#     # my $format = $volume->{ format };
+#     # if ( defined $format ) {
+#     # }
 
-    my $device = $volume->{ device };
-    my $mountpoint = $volume->{ mountpoint } || "/mnt";
-    $self->logDebug( "device", $device );
-    $self->logDebug( "mountpoint", $mountpoint );
-    $volumer->createMountPoint( $mountpoint );
+#     my $device = $volume->{ device };
+#     my $mountpoint = $volume->{ mountpoint } || "/mnt";
+#     $self->logDebug( "device", $device );
+#     $self->logDebug( "mountpoint", $mountpoint );
+#     $volumer->createMountPoint( $mountpoint );
 
-    my $success = $volumer->attachVolume( $instanceid, $volumeid, $device, $mountpoint );
-    $self->logDebug( "success", $success );
-    $self->logCritical( "FAILED TO ATTACH VOLUME" ) if $success == 0;
+#     my $success = $volumer->attachVolume( $instanceid, $volumeid, $device, $mountpoint );
+#     $self->logDebug( "success", $success );
+#     $self->logCritical( "FAILED TO ATTACH VOLUME" ) if $success == 0;
 
-    $volumer->waitVolumeStatus( $volumeid, [ "attached", "in-use" ] );
+#     $volumer->waitVolumeStatus( $volumeid, [ "attached", "in-use" ] );
 
-    $volumer->mountVolume( $device, $mountpoint, $filetype );
-  }
-}
+#     $volumer->mountVolume( $device, $mountpoint, $filetype );
+#   }
+# }
 
-method ipFromInstanceId ( $instanceid, $credentialsfile,$configfile ) {
-  $self->logDebug( "instanceid", $instanceid );
+# method ipFromInstanceId ( $instanceid, $credentialsfile,$configfile ) {
+#   $self->logDebug( "instanceid", $instanceid );
 
-  my $ipaddress = undef;
-  my $tries = 10;
-  my $delay = 2;
-  my $counter = 0;
+#   my $ipaddress = undef;
+#   my $tries = 1;
+#   my $delay = 2;
+#   my $counter = 0;
 
-  #### SET AUTHENTICATION ENVARS
-  $ENV{'AWS_CONFIG_FILE'} = $configfile;
-  $ENV{'AWS_CREDENTIALS_FILE'} = $credentialsfile;
+#   #### SET AUTHENTICATION ENVARS
+#   $ENV{'AWS_CONFIG_FILE'} = $configfile;
+#   $ENV{'AWS_CREDENTIALS_FILE'} = $credentialsfile;
 
-  my $aws = $self->getAws();
-  while ( $counter < $tries and not defined $ipaddress ) {
-    my $command = "AWS_CONFIG_FILE=$configfile \\
-&& AWS_CREDENTIALS_FILE=$credentialsfile \\
-$aws ec2 describe-instances \\
---instance-ids $instanceid | grep PublicIpAddress";
-    $self->logDebug( "command", $command );
-    my $output = `$command`;
-    $self->logDebug("output", $output);
-    ($ipaddress) = $output =~ /"PublicIpAddress": "([^"]+)"/;
-    $self->logDebug("ipaddress", $ipaddress);
-    sleep( $delay );
-  }
+#   my $aws = $self->getAws();
+#   while ( $counter < $tries and not defined $ipaddress ) {
+#     my $command = "AWS_CONFIG_FILE=$configfile \\
+# && AWS_CREDENTIALS_FILE=$credentialsfile \\
+# $aws ec2 describe-instances \\
+# --instance-ids $instanceid | grep PublicIpAddress";
+#     $self->logDebug( "command", $command );
+#     my $output = `$command`;
+#     $self->logDebug("output", $output);
+#     ($ipaddress) = $output =~ /"PublicIpAddress": "([^"]+)"/;
+#     $self->logDebug("ipaddress", $ipaddress);
+#     sleep( $delay );
+#   }
 
-  return $ipaddress;
-}
+#   return $ipaddress;
+# }
 
 method getProfileValue ( $keystring, $profile ) {
   $self->logDebug( "keystring", $keystring );
@@ -452,19 +432,23 @@ method setInstanceName ( $instanceid, $instancename ) {
 
 method printUserDataFile ( $templatefile, $workflowobject ) {
   $self->logDebug( "templatefile", $templatefile );
-	$self->logDebug( "workflowobject", $workflowobject );
+	# $self->logDebug( "workflowobject", $workflowobject );
 
   my $userdatafile    =   $self->getUserDataFile( $workflowobject );
   $self->logDebug( "userdatafile", $userdatafile );
   
 	#### GET TEMPLATE
 	my $template		=	$self->getFileContents( $templatefile );
+  $template = $self->insertEnvironmentVariables( $template );
   $template = $self->insertConfigValues( $template );
 	$template = $self->insertWorkflowValues( $template, $workflowobject );
   $self->logDebug("templatefile", $templatefile);
   $self->logDebug("template", $template);
 
 	# PRINT TEMPLATE
+  my ($templatedir) = $userdatafile =~ /^(.+?)\/[^\/]+$/;
+  $self->logDebug( "templatedir", $templatedir );
+  File::Path::make_path( $templatedir );
 	$self->printToFile( $userdatafile, $template );
 
   return $userdatafile;
@@ -488,7 +472,7 @@ method getInstallDir ($packagename) {
 }
 
 method getUserDataFile ( $workflowobject ) {
-  $self->logDebug("workflowobject", $workflowobject);
+  # $self->logDebug("workflowobject", $workflowobject);
 
 	my $username		    =	$workflowobject->{ username };
   my $coredir         = $self->conf()->getKey( "core:DIR" );
@@ -536,7 +520,7 @@ method insertWorkflowValues( $template, $workflowobject ) {
   foreach my $key ( keys %$workflowobject ) {
     my $templatekey = uc($key);
     my $value = $workflowobject->{ $key };
-    #$self->logDebug("substituting key $key value '$value' into template");
+    $self->logDebug( "SUBSTITUTING key $key value '$value' into template" );
     $template =~ s/<$templatekey>/$value/msg;
   }
 
@@ -549,12 +533,29 @@ method insertConfigValues ($template) {
   while ( $template =~ m/%([\S]+?)%/g ) {
     my $match = $1;
     my ($key, $subkey) = $match =~ /^(.+?):(.+)$/;
-		my $value = $self->conf()->getKey( "$key:$subkey" );
+    $self->logDebug( "DOING conf->getKey( '$key:$subkey' )" );
+    my $value = $self->conf()->getKey( "$key:$subkey" );
     
     $template =~ s/%$match%/$value/;
-	}
+  }
   $self->logDebug("FINAL template", $template);
     
+  return $template;
+}
+
+method insertEnvironmentVariables ($template) {
+  $self->logDebug("template", $template);
+    
+  while ( $template =~ m/\|envar:([\S]+?)\|/g ) {
+    my $envar = $1;
+    $self->logDebug( "envar", $envar );
+    my $value = $ENV{ $envar };
+    $self->logDebug( "value", $value );
+    
+    $template =~ s/\|envar:$envar\|/$value/;
+  }
+  $self->logDebug("FINAL template", $template);
+
   return $template;
 }
 

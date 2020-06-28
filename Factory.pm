@@ -14,10 +14,10 @@ sub new {
     my $type       = shift;
     
     $type = uc(substr($type, 0, 1)) . substr($type, 1);
-    print "***************** Virtual::new    type: $type\n";
     
     my $location    = "Virtual/$type/Main.pm";
     $class          = "Virtual::" . $type . "::Main";
+
     print "***************** Virtual::new    class: $class\n";
     print "***************** Virtual::new    location: $location\n";
 
