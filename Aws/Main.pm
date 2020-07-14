@@ -87,6 +87,16 @@ method setVolume () {
   return $self->volume( $volume );
 }
 
+#### TO DO
+method getSecurityGroup ( $profilehash ) {
+
+}
+
+#### TO DO
+method createSecurityGroup ( $profilehash ) {
+
+}
+
 method getNodeInfo ( $stageobject ) {
   # $self->logDebug( "stageobject", $stageobject );
   my $profilehash = $stageobject->{ profilehash };
