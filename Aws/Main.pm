@@ -569,29 +569,29 @@ method insertEnvironmentVariables ($template) {
   return $template;
 }
 
-method printAuthFile {
-	#### GET AUTH FILE
-	my $authfile		=	$self->getAuthFile();
-    $self->logDebug("authfile", $authfile);
+# method printAuthFile {
+# 	#### GET AUTH FILE
+# 	my $authfile		=	$self->getAuthFile();
+#     $self->logDebug("authfile", $authfile);
     
-    if ( -f $authfile and not -z $authfile ) {
-        $self->logDebug("authfile found. Returning");
-        return $authfile;
-    }
+#     if ( -f $authfile and not -z $authfile ) {
+#         $self->logDebug("authfile found. Returning");
+#         return $authfile;
+#     }
     
-	#### SET TEMPLATE FkILE	
-	my $accesskeyid		=	$self->conf()->getKey( "core:AWSACCESSKEYID" );
-	my $secretaccesskey =	$self->conf()->getKey( "core:AWSSECRETACCESSKEY" );
+# 	#### SET TEMPLATE FkILE	
+# 	my $accesskeyid		=	$self->conf()->getKey( "core:AWSACCESSKEYID" );
+# 	my $secretaccesskey =	$self->conf()->getKey( "core:AWSSECRETACCESSKEY" );
 
-    my $contents = qq{[default]
-aws_access_key_id=$accesskeyid
-aws_secret_access_key=$secretaccesskey
-};
+#     my $contents = qq{[default]
+# aws_access_key_id=$accesskeyid
+# aws_secret_access_key=$secretaccesskey
+# };
 	
-	$self->printToFile($authfile, $contents);
+# 	$self->printToFile($authfile, $contents);
 
-	return $authfile;
-}
+# 	return $authfile;
+# }
 
 method printMappingFile ( $mappingfile, $volumesnapshot, $volumesize ) {
   $self->logDebug( "mappingfile", $mappingfile );
@@ -678,21 +678,25 @@ method parseInstanceList ($output) {
 }
 
 #method deleteNode ($authfile, $instanceid) {
-method deleteNode ($instanceid) {
+method deleteNode ( $instanceid, $region ) {
 	$self->logDebug("instanceid", $instanceid);
     
-    my $authfile    =   $self->printAuthFile();
-	$self->logDebug("authfile", $authfile);
+ #    my $authfile    =   $self->printAuthFile();
+	# $self->logDebug("authfile", $authfile);
     
-    my $keypair         =   $self->conf()->getKey( "core:KEYPAIR" );
-    my $availabilityzone=   $self->conf()->getKey( "core:AVAILABILITYZONE" );
-    my $region          =   $self->conf()->getKey( "core:REGION" );
+ #    my $keypair         =   $self->conf()->getKey( "core:KEYPAIR" );
+ #    my $availabilityzone=   $self->conf()->getKey( "core:AVAILABILITYZONE" );
+ #    my $region          =   $self->conf()->getKey( "core:REGION" );
 
-	my $command		=	qq{AWS_CONFIG_FILE=$authfile && /usr/local/bin/aws ec2 terminate-instances \\
+# 	my $command		=	qq{AWS_CONFIG_FILE=$authfile && /usr/local/bin/aws ec2 terminate-instances \\
+# --instance-ids $instanceid \\
+# --region $region };
+
+  my $command   = qq{/usr/bin/aws ec2 terminate-instances \\
 --instance-ids $instanceid \\
 --region $region };
     $self->logDebug("command", $command);
-    
+
     my ($out, $err)	=	$self->runCommand($command);
 	$self->logNote("out", $out);
 	$self->logNote("err", $err);
@@ -707,29 +711,31 @@ method deleteNode ($instanceid) {
 	return $success;
 }
 
-
 method getInstance ($instanceid, $region) {	
-    $self->logDebug("instanceid", $instanceid);
+  $self->logDebug("instanceid", $instanceid);
+  $self->logDebug( "region", $region );
 
 	#my $command		=	qq{. $authfile && aws ec2 describe-instances};
 	my $command		=	qq{aws ec2 describe-instances \\
 --instance-ids $instanceid \\
 --region $region};
+  $self->logDebug( "command", $command );
 	my ($out, $err)	=	$self->runCommand($command);
 	$self->logDebug("out", $out);
 	$self->logDebug("err", $err);
 	
-    my $parser = JSON->new();
-    my $object = $parser->decode($out);
-    my $reservations = $object->{Reservations};
-    return undef if not defined $reservations;
-    
-    my $instances = $$reservations[0]->{Instances};
-    $self->logDebug("instances", $instances);
-    return undef if not defined $instances;
-    return undef if scalar(@$instances) == 0;
+  my $parser = JSON->new();
+  my $object = $parser->decode($out);
+  $self->logDebug( "object", $object );
+  my $reservations = $object->{Reservations};
+  return undef if not defined $reservations;
+  
+  my $instances = $$reservations[0]->{Instances};
+  $self->logDebug("instances", $instances);
+  return undef if not defined $instances;
+  return undef if scalar(@$instances) == 0;
 
-    return $$instances[0];    
+  return $$instances[0];    
 }
 
 #method getInstances ($authfile) {

@@ -18,8 +18,8 @@ sub new {
     my $location    = "Virtual/$type/Main.pm";
     $class          = "Virtual::" . $type . "::Main";
 
-    print "***************** Virtual::new    class: $class\n";
-    print "***************** Virtual::new    location: $location\n";
+    # print "***************** Virtual::new    class: $class\n";
+    # print "***************** Virtual::new    location: $location\n";
 
     require $location;
 
